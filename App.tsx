@@ -4,12 +4,13 @@ import { initialResumeData, templates } from './constants';
 import ResumeForm from './components/ResumeForm';
 import ResumePreview from './components/ResumePreview';
 import TemplateSelector from './components/TemplateSelector';
-import { parseResume, generateSummary } from './services/geminiService';
+import { parseResume, generateSummary, parseResumeFromText } from './services/geminiService';
 import { DownloadIcon, UploadIcon } from './components/icons';
 
-// Declare jspdf and html2canvas from CDN so TypeScript knows about them
+// Declare jspdf, html2canvas, and mammoth from CDN so TypeScript knows about them
 declare const jspdf: any;
 declare const html2canvas: any;
+declare const mammoth: any;
 
 const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -37,16 +38,33 @@ export default function App() {
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
-
+    
         setIsParsing(true);
         setError(null);
         try {
-            const base64Data = await fileToBase64(file);
-            const parsedData = await parseResume(file.type, base64Data);
+            let parsedData;
+            const fileType = file.type;
+            const fileName = file.name.toLowerCase();
+
+            if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || fileName.endsWith('.docx')) {
+                const arrayBuffer = await file.arrayBuffer();
+                const { value: textContent } = await mammoth.extractRawText({ arrayBuffer });
+                parsedData = await parseResumeFromText(textContent);
+            } else if (fileType === 'application/pdf' || fileType === 'text/plain') {
+                const base64Data = await fileToBase64(file);
+                parsedData = await parseResume(file.type, base64Data);
+            } else if (fileType === 'application/msword' || fileName.endsWith('.doc')) {
+                 throw new Error('.doc files are not supported. Please save as a .docx or PDF and try again.');
+            }
+            else {
+                throw new Error(`Unsupported file type: ${fileType || 'unknown'}. Please upload a PDF, DOCX, or TXT file.`);
+            }
+            
             setResumeData(parsedData);
         } catch (err) {
             console.error(err);
-            setError('Failed to parse resume. Please try again or fill the form manually.');
+            const message = err instanceof Error ? err.message : 'Failed to parse resume. Please try again or fill the form manually.';
+            setError(message);
         } finally {
             setIsParsing(false);
             if (fileInputRef.current) {

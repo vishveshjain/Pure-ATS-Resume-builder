@@ -1,112 +1,44 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { ResumeData } from "../types";
 
-// FIX: Per coding guidelines, API key must be read directly from process.env.API_KEY
-// and fallbacks or warnings are not permitted.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const resumeSchema = {
-    type: Type.OBJECT,
-    properties: {
-        contact: {
-            type: Type.OBJECT,
-            properties: {
-                name: { type: Type.STRING },
-                email: { type: Type.STRING },
-                phone: { type: Type.STRING },
-                linkedin: { type: Type.STRING },
-                github: { type: Type.STRING },
-                website: { type: Type.STRING },
-                location: { type: Type.STRING },
-            },
-        },
-        summary: {
-            type: Type.STRING,
-            description: 'A professional summary of 2-4 sentences.'
-        },
-        experience: {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    company: { type: Type.STRING },
-                    title: { type: Type.STRING },
-                    startDate: { type: Type.STRING, description: "e.g., 'Jan 2022' or '2022'" },
-                    endDate: { type: Type.STRING, description: "e.g., 'Present' or 'Dec 2023'" },
-                    location: { type: Type.STRING },
-                    description: {
-                        type: Type.ARRAY,
-                        description: 'List of accomplishments or responsibilities, starting with an action verb.',
-                        items: { type: Type.STRING },
-                    },
-                },
-                required: ['company', 'title', 'startDate', 'endDate', 'description'],
-            },
-        },
-        education: {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    institution: { type: Type.STRING },
-                    degree: { type: Type.STRING },
-                    startDate: { type: Type.STRING },
-                    endDate: { type: Type.STRING },
-                    location: { type: Type.STRING },
-                },
-                required: ['institution', 'degree'],
-            },
-        },
-        projects: {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    name: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    link: { type: Type.STRING },
-                },
-                required: ['name', 'description'],
-            },
-        },
-        skills: {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    category: { type: Type.STRING, description: "e.g., 'Languages', 'Frameworks', 'Developer Tools'" },
-                    items: { type: Type.STRING, description: "A comma-separated list of skills." },
-                },
-                required: ['category', 'items'],
-            },
-        },
-    },
-};
+const getImprovedPrompt = () => `
+    Extract the information from the provided resume content. Structure the output as a valid JSON object.
+    The JSON object must strictly adhere to the following structure. Do not add any extra text, markdown formatting, or explanations outside of the JSON object itself.
+    If a value for a field is not found, use an empty string "" for string fields or an empty array [] for array fields.
 
-export const parseResume = async (mimeType: string, base64Data: string): Promise<ResumeData> => {
-    const prompt = 'Extract the information from this resume and structure it according to the provided JSON schema. For experience descriptions, ensure each item is a string in an array. For skills, group them into logical categories and provide the skills as a single comma-separated string for each category.';
+    JSON Structure:
+    {
+      "contact": { "name": "", "email": "", "phone": "", "linkedin": "", "github": "", "website": "", "location": "" },
+      "summary": "",
+      "experience": [{ "company": "", "title": "", "startDate": "", "endDate": "", "location": "", "description": [""] }],
+      "education": [{ "institution": "", "degree": "", "startDate": "", "endDate": "", "location": "" }],
+      "projects": [{ "name": "", "description": "", "link": "" }],
+      "skills": [{ "category": "", "items": "" }]
+    }
+
+    Important Rules:
+    - For the "experience" section, ensure each accomplishment or responsibility is a separate string within the "description" array.
+    - For the "skills" section, group skills into logical categories (e.g., "Programming Languages", "Frameworks", "Tools"). For each category, provide the skills as a single comma-separated string for the "items" field.
+`;
+
+const processApiResponse = (responseText: string): ResumeData => {
+    let jsonText = responseText.trim();
+    if (jsonText.startsWith('```json')) {
+        jsonText = jsonText.substring(7);
+    }
+    if (jsonText.endsWith('```')) {
+        jsonText = jsonText.substring(0, jsonText.length - 3);
+    }
     
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: {
-            parts: [
-                { inlineData: { mimeType, data: base64Data } },
-                { text: prompt },
-            ],
-        },
-        config: {
-            responseMimeType: 'application/json',
-            responseSchema: resumeSchema,
-        },
-    });
-
-    const jsonText = response.text.trim();
     const parsedJson = JSON.parse(jsonText);
     
-    // Add unique IDs to array items, as they are needed for React keys
+    // Add unique IDs to array items and provide fallbacks for missing data
     const dataWithIds = {
         ...parsedJson,
+        contact: parsedJson.contact || { name: '', email: '', phone: '', linkedin: '', github: '', website: '', location: '' },
+        summary: parsedJson.summary || '',
         experience: parsedJson.experience?.map((item: any, index: number) => ({ ...item, id: `exp${Date.now()}${index}` })) || [],
         education: parsedJson.education?.map((item: any, index: number) => ({ ...item, id: `edu${Date.now()}${index}` })) || [],
         projects: parsedJson.projects?.map((item: any, index: number) => ({ ...item, id: `proj${Date.now()}${index}` })) || [],
@@ -114,6 +46,40 @@ export const parseResume = async (mimeType: string, base64Data: string): Promise
     };
     
     return dataWithIds as ResumeData;
+};
+
+export const parseResume = async (mimeType: string, base64Data: string): Promise<ResumeData> => {
+    const prompt = getImprovedPrompt();
+    
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-pro',
+        contents: [{
+            parts: [
+                { inlineData: { mimeType, data: base64Data } },
+                { text: prompt },
+            ],
+        }],
+        config: {
+            responseMimeType: 'application/json',
+        },
+    });
+
+    return processApiResponse(response.text);
+};
+
+export const parseResumeFromText = async (textContent: string): Promise<ResumeData> => {
+    const prompt = getImprovedPrompt();
+    const fullPrompt = `Resume Content:\n${textContent}\n\n---\n\n${prompt}`;
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-pro',
+        contents: fullPrompt,
+        config: {
+            responseMimeType: 'application/json',
+        },
+    });
+    
+    return processApiResponse(response.text);
 };
 
 
