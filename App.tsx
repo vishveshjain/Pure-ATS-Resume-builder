@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { ResumeData, Template } from './types';
+import { ResumeData, Template, SectionKey } from './types';
 import { initialResumeData, templates } from './constants';
 import ResumeForm from './components/ResumeForm';
 import ResumePreview from './components/ResumePreview';
@@ -23,6 +23,7 @@ const fileToBase64 = (file: File): Promise<string> => {
 export default function App() {
     const [resumeData, setResumeData] = useState<ResumeData>(initialResumeData);
     const [selectedTemplate, setSelectedTemplate] = useState<Template>(templates[0]);
+    const [sectionOrder, setSectionOrder] = useState<SectionKey[]>(['summary', 'experience', 'education', 'projects', 'skills']);
     const [isLoading, setIsLoading] = useState(false);
     const [isParsing, setIsParsing] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
@@ -172,6 +173,8 @@ export default function App() {
                             setResumeData={setResumeData}
                             onGenerateSummary={handleGenerateSummary}
                             isGeneratingSummary={isLoading}
+                            sectionOrder={sectionOrder}
+                            setSectionOrder={setSectionOrder}
                         />
                     </div>
                 </div>
@@ -181,6 +184,7 @@ export default function App() {
                         <ResumePreview
                             resumeData={resumeData}
                             templateComponent={TemplateComponent}
+                            sectionOrder={sectionOrder}
                         />
                     </div>
                 </div>

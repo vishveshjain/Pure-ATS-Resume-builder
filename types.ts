@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 export interface ContactInfo {
@@ -43,6 +42,8 @@ export interface Skill {
     items: string; // Stored as a comma-separated string for easier input management
 }
 
+export type SectionKey = 'summary' | 'experience' | 'education' | 'projects' | 'skills';
+
 export interface ResumeData {
     contact: ContactInfo;
     summary: string;
@@ -54,5 +55,5 @@ export interface ResumeData {
 
 export interface Template {
     name: string;
-    component: React.FC<{ resumeData: ResumeData }>;
+    component: React.FC<{ resumeData: ResumeData; sectionOrder: SectionKey[] }>;
 }
